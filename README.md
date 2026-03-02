@@ -53,6 +53,44 @@ This tool streamlines the user offboarding process by automating critical securi
 4. Copy the contents of `index.html` into this file
 5. Add the backend `.gs` files from this repo (`main.gs`, `directory-operations.gs`, `security-operations.gs`, `drive-operations.gs`, `gmail-operations.gs`, `calendar-operations.gs`, `logging-utils.gs`) and `appscript.json`
 
+### Vue + Vite + TypeScript Build (single-file deploy to `gas/`)
+
+This repo now supports a Vue + Vite workflow where **client and server code are authored in JavaScript/TypeScript**, then built for Apps Script deployment in `gas/`.
+
+#### Source of truth
+
+- Frontend (Vue Composition API + `<script setup>`): `src/App.vue`, `src/main.js`, `src/styles.css`
+- Apps Script backend (TypeScript): `src/server/index.ts`
+
+#### Build output
+
+Running `npm run build` now performs:
+
+1. `vite build` (with `vite-plugin-singlefile`) to emit a single inlined `gas/index.html`
+2. `esbuild` bundle of `src/server/index.ts` into `gas/Code.gs`
+3. copy `appsscript.json` into `gas/appsscript.json`
+
+Use:
+
+```bash
+npm install
+npm run build
+```
+
+Then push with clasp (already configured):
+
+```bash
+clasp push
+```
+
+`.clasp.json` uses `"rootDir": "gas"`, so only deployment-ready artifacts are uploaded.
+
+### How this still works with AdminDirectory, Gmail, Calendar, etc.
+
+- Vue still calls server functions through `google.script.run` (wrapped by `src/gas-client.js`).
+- The backend TypeScript (`src/server/index.ts`) is where Admin SDK / Gmail / Drive / Calendar commands run.
+- Build bundles backend into `gas/Code.gs`, which Apps Script executes with your enabled advanced services.
+
 ### Step 3: Configure for Your Organization
 
 Update the following in the HTML file:
