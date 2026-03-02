@@ -51,7 +51,7 @@ This tool streamlines the user offboarding process by automating critical securi
 2. Select **HTML**
 3. Name it `offboard`
 4. Copy the contents of `index.html` into this file
-5. Do the same with 'main.gs' and 'appscript.json'
+5. Add the backend `.gs` files from this repo (`main.gs`, `directory-operations.gs`, `security-operations.gs`, `drive-operations.gs`, `gmail-operations.gs`, `calendar-operations.gs`, `logging-utils.gs`) and `appscript.json`
 
 ### Step 3: Configure for Your Organization
 

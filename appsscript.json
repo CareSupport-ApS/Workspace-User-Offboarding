@@ -16,6 +16,11 @@
         "userSymbol": "Drive",
         "version": "v2",
         "serviceId": "drive"
+      },
+      {
+        "userSymbol": "Calendar",
+        "version": "v3",
+        "serviceId": "calendar"
       }
     ]
   },
@@ -32,7 +37,9 @@
     "https://www.googleapis.com/auth/drive",
     "https://www.googleapis.com/auth/drive.admin",
     "https://www.googleapis.com/auth/admin.directory.rolemanagement",
-    "https://www.googleapis.com/auth/admin.directory.user.security"
+    "https://www.googleapis.com/auth/admin.directory.user.security",
+    "https://www.googleapis.com/auth/calendar",
+    "https://www.googleapis.com/auth/script.send_mail"
   ],
   "webapp": {
     "executeAs": "USER_ACCESSING",
