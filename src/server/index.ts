@@ -59,6 +59,10 @@ function getAllUsers() {
   }
 }
 
+function ping() {
+  return 'pong';
+}
+
 function getUserDirectoryContext(email, actionLog) {
   const context = { userDisplay: email, managerEmail: null, managerDisplay: 'No manager found.' };
 
@@ -433,4 +437,4 @@ function offboardUser(formData) {
   }
 }
 
-Object.assign(globalThis, { doGet, offboardUser, getAllUsers });
+Object.assign(globalThis, { doGet, offboardUser, getAllUsers, ping });
