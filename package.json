@@ -6,8 +6,8 @@
   "scripts": {
     "build": "npm run build:client && npm run build:server && npm run build:manifest",
     "build:client": "vite build",
-    "build:server": "node scripts/build-gas-server.mjs",
-    "build:manifest": "node scripts/copy-manifest.mjs",
+    "build:server": "node scripts/build-gas-server.mts",
+    "build:manifest": "node scripts/copy-manifest.mts",
     "dev": "vite"
   },
   "dependencies": {
