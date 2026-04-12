@@ -47,10 +47,11 @@
       />
 
       <div v-else class="h-full">
-        <div v-if="selectedUser && loadingDetails" class="flex min-h-full flex-col justify-center">
-          <h3 class="m-0">Loading user details</h3>
-          <p class="text-slate-500">Fetching the latest directory profile for the selected user.</p>
-        </div>
+        <LoadingState
+          v-if="selectedUser && loadingDetails"
+          description="Fetching the latest directory profile for the selected user."
+          title="Loading user details"
+        />
 
         <div v-else-if="selectedUser && detailsError" class="flex min-h-full flex-col justify-center">
           <h3 class="m-0">Could not load details</h3>

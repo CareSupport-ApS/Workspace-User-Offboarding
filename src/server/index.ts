@@ -126,6 +126,49 @@ function getUserMailboxSettings(email) {
   }
 }
 
+function getUserGroups(email) {
+  try {
+    if (!email) throw new Error('User email is required.');
+
+    const memberships = [];
+    let pageToken;
+
+    do {
+      const response = AdminDirectory.Groups.list({
+        userKey: email,
+        maxResults: 200,
+        pageToken
+      });
+
+      (response.groups || []).forEach((group) => {
+        let role = '';
+
+        try {
+          const member = AdminDirectory.Members.get(group.id, email);
+          role = member?.role || '';
+        } catch (_memberError) {
+          // Keep role empty if member lookup fails.
+        }
+
+        memberships.push({
+          email: group.email || '',
+          id: group.id || '',
+          name: group.name || group.email || 'Unnamed group',
+          role
+        });
+      });
+
+      pageToken = response.nextPageToken;
+    } while (pageToken);
+
+    memberships.sort((left, right) => left.name.localeCompare(right.name));
+    return memberships;
+  } catch (error) {
+    console.error('Error fetching user groups:', error);
+    throw new Error(`Failed to fetch user groups: ${error.message}`);
+  }
+}
+
 function ping() {
   return 'pong';
 }
@@ -504,4 +547,4 @@ function offboardUser(formData) {
   }
 }
 
-Object.assign(globalThis, { doGet, offboardUser, getAllUsers, getUserDetails, getUserMailboxSettings, ping });
+Object.assign(globalThis, { doGet, offboardUser, getAllUsers, getUserDetails, getUserMailboxSettings, getUserGroups, ping });

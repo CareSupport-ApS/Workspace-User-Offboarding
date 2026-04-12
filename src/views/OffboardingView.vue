@@ -31,9 +31,9 @@
       <template #default="{ currentStep }">
         <OffboardingUserStep
           v-if="currentStep === '1'"
-          :details-error="detailsError"
-          :loading-details="loadingDetails"
-          :loading-users="loadingUsers"
+          :details-error="userDetailsQuery.error.value"
+          :loading-details="userDetailsQuery.loading.value"
+          :loading-users="usersQuery.loading.value"
           :selected-user="selectedUser"
           :users="allUsers"
           @select-user="selectUser"
@@ -41,15 +41,19 @@
 
         <OffboardingMailCalendarStep
           v-else-if="currentStep === '2'"
-          :current-mailbox-settings="currentMailboxSettings"
+          :current-mailbox-settings="mailboxSettingsQuery.result.value"
           :form="form"
-          :loading-mailbox-settings="loadingMailboxSettings"
-          :mailbox-settings-error="mailboxSettingsError"
+          :loading-mailbox-settings="mailboxSettingsQuery.loading.value"
+          :mailbox-settings-error="mailboxSettingsQuery.error.value"
         />
 
         <OffboardingSecurityStep
           v-else-if="currentStep === '3'"
           :form="form"
+          :group-memberships="userGroupsQuery.result.value ?? []"
+          :groups-error="userGroupsQuery.error.value"
+          :loading-groups="userGroupsQuery.loading.value"
+          :selected-user="selectedUser"
         />
 
         <OffboardingReviewStep
@@ -64,8 +68,8 @@
           {{ successResult.message }}
         </Message>
 
-        <Message v-if="errorMessage" severity="error" class="feedback-message">
-          {{ errorMessage }}
+        <Message v-if="usersQuery.error.value || errorMessage" severity="error" class="feedback-message">
+          {{ usersQuery.error.value || errorMessage }}
         </Message>
       </template>
     </BaseWorkflowCard>
@@ -74,71 +78,15 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
-import { gasCall, hasAppsScriptRuntime } from '../gas-client';
+import { gasCall } from '../gas-client';
+import { useFetchAllUsers, useFetchMailboxSettings, useFetchUserDetails, useFetchUserGroups, useOffboardingEnvironment } from '../composables/useOffboardingQueries';
 import BaseWorkflowCard from '../components/BaseWorkflowCard.vue';
 import LoadingOverlay from '../components/LoadingOverlay.vue';
 import OffboardingMailCalendarStep from '../components/offboarding/OffboardingMailCalendarStep.vue';
 import OffboardingReviewStep from '../components/offboarding/OffboardingReviewStep.vue';
 import OffboardingSecurityStep from '../components/offboarding/OffboardingSecurityStep.vue';
 import OffboardingUserStep from '../components/offboarding/OffboardingUserStep.vue';
-
-interface UserOption {
-  department?: string;
-  email: string;
-  includeInGlobalAddressList?: boolean;
-  manager?: string;
-  name: string;
-  orgUnitPath?: string;
-  role?: string;
-  status?: string;
-  suspended?: boolean;
-}
-
-interface MailOptions {
-  enableAutoReply: boolean;
-  autoReplySubject: string;
-  autoReplyMessage: string;
-}
-
-interface CalendarOptions {
-  grantManagerAccess: boolean;
-}
-
-interface SecurityOptions {
-  suspend: boolean;
-  resetPassword: boolean;
-  removeGroups: boolean;
-  removeAdminRoles: boolean;
-  revokeTokens: boolean;
-  signOut: boolean;
-}
-
-interface OffboardingForm {
-  mail: MailOptions;
-  calendar: CalendarOptions;
-  security: SecurityOptions;
-}
-
-interface OffboardingResult {
-  message: string;
-  [key: string]: unknown;
-}
-
-interface MailboxSettings {
-  enableAutoReply: boolean;
-  responseBodyPlainText: string;
-  responseSubject: string;
-  restrictToContacts?: boolean;
-  restrictToDomain?: boolean;
-}
-
-const MOCK_USERS: UserOption[] = [
-  { name: 'Ava Thompson', email: 'ava.thompson@dearfuture.dk', role: 'Senior Designer', department: 'Brand', manager: 'Emma Collins', status: 'Active', orgUnitPath: '/Brand' },
-  { name: 'Lucas Jensen', email: 'lucas.jensen@dearfuture.dk', role: 'Operations Manager', department: 'Operations', manager: 'Henrik Olsen', status: 'Active', orgUnitPath: '/Operations' },
-  { name: 'Maya Patel', email: 'maya.patel@dearfuture.dk', role: 'Growth Specialist', department: 'Marketing', manager: 'Sarah Ahmed', status: 'Active', orgUnitPath: '/Marketing' },
-  { name: 'Noah Berg', email: 'noah.berg@dearfuture.dk', role: 'Frontend Engineer', department: 'Product', manager: 'Lina Sorensen', status: 'Active', orgUnitPath: '/Product' },
-  { name: 'Sofia Nielsen', email: 'sofia.nielsen@dearfuture.dk', role: 'People Partner', department: 'People & Culture', manager: 'Maria Lund', status: 'Active', orgUnitPath: '/People' }
-];
+import type { OffboardingForm, OffboardingResult, UserOption } from '../offboarding-types';
 
 const step = ref('1');
 const steps = [
@@ -147,19 +95,16 @@ const steps = [
   { value: '3', label: 'Security' },
   { value: '4', label: 'Review' }
 ];
-const allUsers = ref<UserOption[]>([]);
 const userEmail = ref('');
 const loading = ref(false);
-const loadingDetails = ref(false);
-const loadingMailboxSettings = ref(false);
-const loadingUsers = ref(false);
 const successResult = ref<OffboardingResult | null>(null);
-const detailsError = ref('');
 const errorMessage = ref('');
-const mailboxSettingsError = ref('');
-const isTestingMode = !hasAppsScriptRuntime();
-const userDetailsCache = reactive<Record<string, UserOption>>({});
-const mailboxSettingsCache = reactive<Record<string, MailboxSettings>>({});
+const { isTestingMode } = useOffboardingEnvironment();
+
+const usersQuery = useFetchAllUsers();
+const userDetailsQuery = useFetchUserDetails();
+const mailboxSettingsQuery = useFetchMailboxSettings();
+const userGroupsQuery = useFetchUserGroups();
 
 const form = reactive<OffboardingForm>({
   mail: {
@@ -178,14 +123,10 @@ const form = reactive<OffboardingForm>({
   }
 });
 
+const allUsers = computed(() => usersQuery.result.value ?? []);
 const selectedUser = computed(() => {
   if (!userEmail.value) return null;
-  return userDetailsCache[userEmail.value] || allUsers.value.find((user) => user.email === userEmail.value) || null;
-});
-
-const currentMailboxSettings = computed(() => {
-  if (!userEmail.value) return null;
-  return mailboxSettingsCache[userEmail.value] || null;
+  return userDetailsQuery.result.value || allUsers.value.find((user) => user.email === userEmail.value) || null;
 });
 
 const currentStepIndex = computed(() =>
@@ -209,91 +150,17 @@ function cloneFormState(): OffboardingForm {
   };
 }
 
-async function fetchUsers() {
-  loadingUsers.value = true;
-
-  if (isTestingMode) {
-    allUsers.value = MOCK_USERS;
-    for (const user of MOCK_USERS) {
-      userDetailsCache[user.email] = user;
-    }
-    loadingUsers.value = false;
-    return;
-  }
-
-  try {
-    allUsers.value = await gasCall<UserOption[]>('getAllUsers');
-  } catch (error: unknown) {
-    errorMessage.value = error instanceof Error ? error.message : 'Failed to fetch users.';
-  } finally {
-    loadingUsers.value = false;
-  }
-}
-
-async function loadUserDetails(email: string) {
-  detailsError.value = '';
-
-  if (userDetailsCache[email]) {
-    return;
-  }
-
-  const listUser = allUsers.value.find((user) => user.email === email);
-  if (listUser) {
-    userDetailsCache[email] = listUser;
-  }
-
-  if (isTestingMode) {
-    return;
-  }
-
-  loadingDetails.value = true;
-
-  try {
-    const details = await gasCall<UserOption>('getUserDetails', email);
-    userDetailsCache[email] = details;
-  } catch (error: unknown) {
-    detailsError.value = error instanceof Error ? error.message : 'Failed to fetch user details.';
-  } finally {
-    loadingDetails.value = false;
-  }
-}
-
-async function loadMailboxSettings(email: string) {
-  mailboxSettingsError.value = '';
-
-  if (mailboxSettingsCache[email]) {
-    return;
-  }
-
-  if (isTestingMode) {
-    mailboxSettingsCache[email] = {
-      enableAutoReply: email === 'ava.thompson@dearfuture.dk',
-      responseSubject: email === 'ava.thompson@dearfuture.dk' ? 'On leave' : '',
-      responseBodyPlainText: email === 'ava.thompson@dearfuture.dk'
-        ? 'Thanks for your message. I am currently out of office and will reply when I return.'
-        : '',
-      restrictToContacts: false,
-      restrictToDomain: true
-    };
-    return;
-  }
-
-  loadingMailboxSettings.value = true;
-
-  try {
-    const settings = await gasCall<MailboxSettings>('getUserMailboxSettings', email);
-    mailboxSettingsCache[email] = settings;
-  } catch (error: unknown) {
-    mailboxSettingsError.value = error instanceof Error ? error.message : 'Failed to fetch mailbox settings.';
-  } finally {
-    loadingMailboxSettings.value = false;
-  }
-}
-
-function selectUser(user: UserOption) {
+async function selectUser(user: UserOption) {
   userEmail.value = user.email;
-  void loadUserDetails(user.email);
-  void loadMailboxSettings(user.email);
+  userDetailsQuery.reset();
+  mailboxSettingsQuery.reset();
+  userGroupsQuery.reset();
+
+  await Promise.allSettled([
+    userDetailsQuery.fetchUserDetails(user.email),
+    mailboxSettingsQuery.fetchMailboxSettings(user.email),
+    userGroupsQuery.fetchUserGroups(user.email)
+  ]);
 }
 
 function goNextFromUser() {
@@ -367,6 +234,6 @@ async function runMockOffboarding(): Promise<OffboardingResult> {
 }
 
 onMounted(() => {
-  void fetchUsers();
+  void usersQuery.fetchUsers();
 });
 </script>

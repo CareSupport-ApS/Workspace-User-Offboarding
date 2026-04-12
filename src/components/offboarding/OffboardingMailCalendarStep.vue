@@ -42,9 +42,11 @@
           </p>
         </div>
 
-        <Message v-if="loadingMailboxSettings" severity="secondary">
-          Loading the user's current mailbox settings.
-        </Message>
+        <LoadingState
+          v-if="loadingMailboxSettings"
+          description="Fetching the user's current mailbox settings."
+          title="Loading mailbox settings"
+        />
 
         <Message v-else-if="mailboxSettingsError" severity="warn">
           {{ mailboxSettingsError }}
@@ -101,6 +103,7 @@
 </template>
 
 <script setup lang="ts">
+import LoadingState from '../LoadingState.vue';
 import WorkflowSplitPanel from '../WorkflowSplitPanel.vue';
 
 interface MailOptions {
