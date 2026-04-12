@@ -33,6 +33,7 @@
           v-if="currentStep === '1'"
           :details-error="detailsError"
           :loading-details="loadingDetails"
+          :loading-users="loadingUsers"
           :selected-user="selectedUser"
           :users="allUsers"
           @select-user="selectUser"
@@ -40,7 +41,10 @@
 
         <OffboardingMailCalendarStep
           v-else-if="currentStep === '2'"
+          :current-mailbox-settings="currentMailboxSettings"
           :form="form"
+          :loading-mailbox-settings="loadingMailboxSettings"
+          :mailbox-settings-error="mailboxSettingsError"
         />
 
         <OffboardingSecurityStep
@@ -120,6 +124,14 @@ interface OffboardingResult {
   [key: string]: unknown;
 }
 
+interface MailboxSettings {
+  enableAutoReply: boolean;
+  responseBodyPlainText: string;
+  responseSubject: string;
+  restrictToContacts?: boolean;
+  restrictToDomain?: boolean;
+}
+
 const MOCK_USERS: UserOption[] = [
   { name: 'Ava Thompson', email: 'ava.thompson@dearfuture.dk', role: 'Senior Designer', department: 'Brand', manager: 'Emma Collins', status: 'Active', orgUnitPath: '/Brand' },
   { name: 'Lucas Jensen', email: 'lucas.jensen@dearfuture.dk', role: 'Operations Manager', department: 'Operations', manager: 'Henrik Olsen', status: 'Active', orgUnitPath: '/Operations' },
@@ -139,11 +151,15 @@ const allUsers = ref<UserOption[]>([]);
 const userEmail = ref('');
 const loading = ref(false);
 const loadingDetails = ref(false);
+const loadingMailboxSettings = ref(false);
+const loadingUsers = ref(false);
 const successResult = ref<OffboardingResult | null>(null);
 const detailsError = ref('');
 const errorMessage = ref('');
+const mailboxSettingsError = ref('');
 const isTestingMode = !hasAppsScriptRuntime();
 const userDetailsCache = reactive<Record<string, UserOption>>({});
+const mailboxSettingsCache = reactive<Record<string, MailboxSettings>>({});
 
 const form = reactive<OffboardingForm>({
   mail: {
@@ -167,6 +183,14 @@ const selectedUser = computed(() => {
   return userDetailsCache[userEmail.value] || allUsers.value.find((user) => user.email === userEmail.value) || null;
 });
 
+const currentMailboxSettings = computed(() => {
+  if (!userEmail.value) return null;
+  return mailboxSettingsCache[userEmail.value] || null;
+});
+
+const currentStepIndex = computed(() =>
+  Math.max(steps.findIndex((item) => item.value === step.value), 0)
+);
 const nextDisabled = computed(() => step.value === '1' && !userEmail.value);
 const nextLabel = computed(() => step.value === '4' ? 'Run offboarding' : 'Continue');
 const introCopy = computed(() => {
@@ -186,11 +210,14 @@ function cloneFormState(): OffboardingForm {
 }
 
 async function fetchUsers() {
+  loadingUsers.value = true;
+
   if (isTestingMode) {
     allUsers.value = MOCK_USERS;
     for (const user of MOCK_USERS) {
       userDetailsCache[user.email] = user;
     }
+    loadingUsers.value = false;
     return;
   }
 
@@ -198,6 +225,8 @@ async function fetchUsers() {
     allUsers.value = await gasCall<UserOption[]>('getAllUsers');
   } catch (error: unknown) {
     errorMessage.value = error instanceof Error ? error.message : 'Failed to fetch users.';
+  } finally {
+    loadingUsers.value = false;
   }
 }
 
@@ -229,9 +258,42 @@ async function loadUserDetails(email: string) {
   }
 }
 
+async function loadMailboxSettings(email: string) {
+  mailboxSettingsError.value = '';
+
+  if (mailboxSettingsCache[email]) {
+    return;
+  }
+
+  if (isTestingMode) {
+    mailboxSettingsCache[email] = {
+      enableAutoReply: email === 'ava.thompson@dearfuture.dk',
+      responseSubject: email === 'ava.thompson@dearfuture.dk' ? 'On leave' : '',
+      responseBodyPlainText: email === 'ava.thompson@dearfuture.dk'
+        ? 'Thanks for your message. I am currently out of office and will reply when I return.'
+        : '',
+      restrictToContacts: false,
+      restrictToDomain: true
+    };
+    return;
+  }
+
+  loadingMailboxSettings.value = true;
+
+  try {
+    const settings = await gasCall<MailboxSettings>('getUserMailboxSettings', email);
+    mailboxSettingsCache[email] = settings;
+  } catch (error: unknown) {
+    mailboxSettingsError.value = error instanceof Error ? error.message : 'Failed to fetch mailbox settings.';
+  } finally {
+    loadingMailboxSettings.value = false;
+  }
+}
+
 function selectUser(user: UserOption) {
   userEmail.value = user.email;
   void loadUserDetails(user.email);
+  void loadMailboxSettings(user.email);
 }
 
 function goNextFromUser() {
@@ -241,22 +303,16 @@ function goNextFromUser() {
     return;
   }
 
-  step.value = '2';
+  const nextStep = steps[currentStepIndex.value + 1];
+  if (nextStep) {
+    step.value = nextStep.value;
+  }
 }
 
 function goBack() {
-  if (step.value === '2') {
-    step.value = '1';
-    return;
-  }
-
-  if (step.value === '3') {
-    step.value = '2';
-    return;
-  }
-
-  if (step.value === '4') {
-    step.value = '3';
+  const previousStep = steps[currentStepIndex.value - 1];
+  if (previousStep) {
+    step.value = previousStep.value;
   }
 }
 
@@ -266,17 +322,16 @@ function goNext() {
     return;
   }
 
-  if (step.value === '2') {
-    step.value = '3';
+  const isLastStep = currentStepIndex.value === steps.length - 1;
+  if (isLastStep) {
+    void runOffboarding();
     return;
   }
 
-  if (step.value === '3') {
-    step.value = '4';
-    return;
+  const nextStep = steps[currentStepIndex.value + 1];
+  if (nextStep) {
+    step.value = nextStep.value;
   }
-
-  void runOffboarding();
 }
 
 async function runOffboarding() {

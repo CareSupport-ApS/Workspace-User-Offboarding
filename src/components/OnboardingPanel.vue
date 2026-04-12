@@ -75,6 +75,9 @@ const steps = [
   { value: '2', label: 'Access' },
   { value: '3', label: 'Review' }
 ];
+const currentStepIndex = computed(() =>
+  Math.max(steps.findIndex((item) => item.value === step.value), 0)
+);
 
 const summary = computed(() => {
   const name = form.fullName || 'New team member';
@@ -97,24 +100,16 @@ function resetForm() {
 }
 
 function goBack() {
-  if (step.value === '2') {
-    step.value = '1';
-    return;
-  }
-
-  if (step.value === '3') {
-    step.value = '2';
+  const previousStep = steps[currentStepIndex.value - 1];
+  if (previousStep) {
+    step.value = previousStep.value;
   }
 }
 
 function goNext() {
-  if (step.value === '1') {
-    step.value = '2';
-    return;
-  }
-
-  if (step.value === '2') {
-    step.value = '3';
+  const nextStep = steps[currentStepIndex.value + 1];
+  if (nextStep) {
+    step.value = nextStep.value;
   }
 }
 </script>

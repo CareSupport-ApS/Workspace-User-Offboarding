@@ -103,6 +103,29 @@ function getUserDetails(email) {
   }
 }
 
+function getUserMailboxSettings(email) {
+  try {
+    if (!email) throw new Error('User email is required.');
+
+    if (typeof Gmail === 'undefined' || !Gmail.Users?.Settings?.getVacation) {
+      throw new Error('Gmail advanced service is not enabled.');
+    }
+
+    const vacation = Gmail.Users.Settings.getVacation(email);
+
+    return {
+      enableAutoReply: Boolean(vacation.enableAutoReply),
+      responseSubject: vacation.responseSubject || '',
+      responseBodyPlainText: vacation.responseBodyPlainText || '',
+      restrictToContacts: Boolean(vacation.restrictToContacts),
+      restrictToDomain: Boolean(vacation.restrictToDomain)
+    };
+  } catch (error) {
+    console.error('Error fetching mailbox settings:', error);
+    throw new Error(`Failed to fetch mailbox settings: ${error.message}`);
+  }
+}
+
 function ping() {
   return 'pong';
 }
@@ -481,4 +504,4 @@ function offboardUser(formData) {
   }
 }
 
-Object.assign(globalThis, { doGet, offboardUser, getAllUsers, getUserDetails, ping });
+Object.assign(globalThis, { doGet, offboardUser, getAllUsers, getUserDetails, getUserMailboxSettings, ping });
