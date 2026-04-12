@@ -59,6 +59,50 @@ function getAllUsers() {
   }
 }
 
+function getUserDetails(email) {
+  try {
+    if (!email) throw new Error('User email is required.');
+
+    const user = AdminDirectory.Users.get(email, { projection: 'full' });
+    if (!user) throw new Error('User not found.');
+
+    const primaryOrganization =
+      (user.organizations || []).find((organization) => organization.primary)
+      || user.organizations?.[0]
+      || null;
+    const managerRelation =
+      (user.relations || []).find((relation) => relation.type === 'manager' && relation.value)
+      || null;
+
+    let manager = managerRelation?.value || '';
+    if (manager) {
+      try {
+        const managerUser = AdminDirectory.Users.get(manager, { projection: 'basic' });
+        if (managerUser?.name?.fullName) {
+          manager = `${managerUser.name.fullName} <${manager}>`;
+        }
+      } catch (_managerError) {
+        // Keep the manager email if lookup fails.
+      }
+    }
+
+    return {
+      email: user.primaryEmail || email,
+      name: user.name?.fullName || email,
+      suspended: Boolean(user.suspended),
+      status: user.suspended ? 'Suspended' : 'Active',
+      department: primaryOrganization?.department || '',
+      role: primaryOrganization?.title || '',
+      manager,
+      orgUnitPath: user.orgUnitPath || '',
+      includeInGlobalAddressList: user.includeInGlobalAddressList !== false
+    };
+  } catch (error) {
+    console.error('Error fetching user details:', error);
+    throw new Error(`Failed to fetch user details: ${error.message}`);
+  }
+}
+
 function ping() {
   return 'pong';
 }
@@ -437,4 +481,4 @@ function offboardUser(formData) {
   }
 }
 
-Object.assign(globalThis, { doGet, offboardUser, getAllUsers, ping });
+Object.assign(globalThis, { doGet, offboardUser, getAllUsers, getUserDetails, ping });

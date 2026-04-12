@@ -1,4 +1,4 @@
-function hasAppsScriptRuntime(): boolean {
+export function hasAppsScriptRuntime(): boolean {
   return typeof google !== 'undefined' && Boolean(google?.script?.run);
 }
 

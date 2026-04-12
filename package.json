@@ -6,14 +6,16 @@
   "scripts": {
     "build": "npm run build:client && npm run build:server && npm run build:manifest",
     "build:client": "vite build",
-    "build:server": "node scripts/build-gas-server.mts",
-    "build:manifest": "node scripts/copy-manifest.mts",
+    "build:server": "node scripts/build-gas-server.mjs",
+    "build:manifest": "node scripts/copy-manifest.mjs",
+    "clasp": "npm run build && node scripts/clasp-deploy.mjs",
     "dev": "vite"
   },
   "dependencies": {
     "@primeuix/themes": "^2.0.3",
     "primevue": "^4.5.4",
-    "vue": "^3.5.13"
+    "vue": "^3.5.13",
+    "vue-router": "^4.6.4"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.1.4",
