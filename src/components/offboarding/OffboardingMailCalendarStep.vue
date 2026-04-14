@@ -30,6 +30,16 @@
           <Checkbox v-model="form.calendar.grantManagerAccess" binary input-id="grantManagerAccess" />
           <label for="grantManagerAccess">Grant manager calendar access</label>
         </div>
+
+        <div class="flex items-start gap-3">
+          <Checkbox v-model="form.calendar.hideFromGlobalAddressList" binary input-id="hideFromGlobalAddressList" class="mt-1" />
+          <div class="space-y-1">
+            <label for="hideFromGlobalAddressList" class="font-medium text-slate-900">Hide from Global Address List</label>
+            <p class="m-0 text-sm leading-6 text-slate-600">
+              Removes the user from the Google Workspace directory so they no longer appear in address lookups.
+            </p>
+          </div>
+        </div>
       </div>
     </template>
 
@@ -97,6 +107,18 @@
               : 'No manager calendar access will be granted in this run.' }}
           </p>
         </div>
+
+        <div class="rounded-2xl border border-slate-200 bg-white p-5">
+          <div class="flex items-center justify-between gap-3">
+            <span class="font-semibold text-slate-900">Directory visibility</span>
+            <Tag :severity="form.calendar.hideFromGlobalAddressList ? 'success' : 'secondary'" :value="form.calendar.hideFromGlobalAddressList ? 'Hidden from GAL' : 'Visible in GAL'" />
+          </div>
+          <p class="mb-0 mt-3 text-slate-500">
+            {{ form.calendar.hideFromGlobalAddressList
+              ? 'This run will hide the user from the Global Address List.'
+              : 'This run will leave the user visible in the Global Address List.' }}
+          </p>
+        </div>
       </div>
     </template>
   </WorkflowSplitPanel>
@@ -114,6 +136,7 @@ interface MailOptions {
 
 interface CalendarOptions {
   grantManagerAccess: boolean;
+  hideFromGlobalAddressList: boolean;
 }
 
 defineProps<{

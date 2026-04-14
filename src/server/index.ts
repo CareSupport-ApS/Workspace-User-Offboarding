@@ -1,5 +1,133 @@
 // @ts-nocheck
 
+const GMAIL_SETTINGS_SCOPE = 'https://www.googleapis.com/auth/gmail.settings.basic';
+const SERVICE_ACCOUNT_KEY_PROPERTY = 'SERVICE_ACCOUNT_KEY';
+const LEGACY_SERVICE_ACCOUNT_KEY_PROPERTY = 'SERVICE_ACCOUNT_CREDENTIALS_JSON';
+const APPS_SCRIPT_OAUTH2_LIBRARY_ID = '1B7FSrk5Zi6L1rSxxTDgDEUsPzlukDsi4KGuTMorsTQHhGBzBkMun4iDF';
+
+function getServiceAccountCredentials() {
+  const scriptProperties = PropertiesService.getScriptProperties();
+  const rawCredentials =
+    scriptProperties.getProperty(SERVICE_ACCOUNT_KEY_PROPERTY)
+    || scriptProperties.getProperty(LEGACY_SERVICE_ACCOUNT_KEY_PROPERTY);
+
+  if (!rawCredentials) {
+    throw new Error(
+      `Script property "${SERVICE_ACCOUNT_KEY_PROPERTY}" is missing. Add the full service account JSON key before using Gmail auto-reply.`
+    );
+  }
+
+  let credentials;
+  try {
+    credentials = JSON.parse(rawCredentials);
+  } catch (_parseError) {
+    throw new Error(`Script property "${SERVICE_ACCOUNT_KEY_PROPERTY}" does not contain valid JSON.`);
+  }
+
+  if (!credentials.client_email || !credentials.private_key) {
+    throw new Error(`Script property "${SERVICE_ACCOUNT_KEY_PROPERTY}" must include "client_email" and "private_key".`);
+  }
+
+  return {
+    clientEmail: credentials.client_email,
+    privateKey: String(credentials.private_key).replace(/\\n/g, '\n'),
+    tokenUri: credentials.token_uri || 'https://oauth2.googleapis.com/token'
+  };
+}
+
+function fetchJson(url, options) {
+  const response = UrlFetchApp.fetch(url, {
+    muteHttpExceptions: true,
+    ...options
+  });
+  const statusCode = response.getResponseCode();
+  const body = response.getContentText();
+  let parsedBody = null;
+
+  if (body) {
+    try {
+      parsedBody = JSON.parse(body);
+    } catch (_parseError) {
+      parsedBody = body;
+    }
+  }
+
+  if (statusCode < 200 || statusCode >= 300) {
+    const message = typeof parsedBody === 'string'
+      ? parsedBody
+      : parsedBody?.error_description || parsedBody?.error?.message || body || `HTTP ${statusCode}`;
+    throw new Error(message);
+  }
+
+  return parsedBody;
+}
+
+function getOAuth2Library() {
+  if (typeof OAuth2 === 'undefined' || !OAuth2?.createService) {
+    throw new Error(
+      `Apps Script OAuth2 library is not available. Add library ${APPS_SCRIPT_OAUTH2_LIBRARY_ID} with user symbol "OAuth2".`
+    );
+  }
+
+  return OAuth2;
+}
+
+function getDelegatedGmailService(subjectEmail) {
+  const credentials = getServiceAccountCredentials();
+  const oauth2 = getOAuth2Library();
+
+  return oauth2.createService(`gmailSettings:${subjectEmail}`)
+    .setTokenUrl(credentials.tokenUri)
+    .setPrivateKey(credentials.privateKey)
+    .setIssuer(credentials.clientEmail)
+    .setSubject(subjectEmail)
+    .setPropertyStore(PropertiesService.getScriptProperties())
+    .setCache(CacheService.getScriptCache())
+    .setLock(LockService.getScriptLock())
+    .setScope(GMAIL_SETTINGS_SCOPE);
+}
+
+function getDelegatedVacationEndpoint() {
+  return 'https://gmail.googleapis.com/gmail/v1/users/me/settings/vacation';
+}
+
+function getDelegatedMailboxSettings(email) {
+  const service = getDelegatedGmailService(email);
+  if (!service.hasAccess()) {
+    throw new Error(service.getLastError() || 'Failed to obtain delegated Gmail access token.');
+  }
+
+  const vacation = fetchJson(getDelegatedVacationEndpoint(), {
+    headers: {
+      Authorization: `Bearer ${service.getAccessToken()}`
+    }
+  }) || {};
+
+  return {
+    enableAutoReply: Boolean(vacation.enableAutoReply),
+    responseSubject: vacation.responseSubject || '',
+    responseBodyPlainText: vacation.responseBodyPlainText || '',
+    restrictToContacts: Boolean(vacation.restrictToContacts),
+    restrictToDomain: Boolean(vacation.restrictToDomain)
+  };
+}
+
+function updateDelegatedMailboxSettings(email, settings) {
+  const service = getDelegatedGmailService(email);
+  if (!service.hasAccess()) {
+    throw new Error(service.getLastError() || 'Failed to obtain delegated Gmail access token.');
+  }
+
+  return fetchJson(getDelegatedVacationEndpoint(), {
+    method: 'put',
+    contentType: 'application/json',
+    headers: {
+      Authorization: `Bearer ${service.getAccessToken()}`
+    },
+    payload: JSON.stringify(settings)
+  });
+}
+
 function logAction(actionLog, category, action, result, details) {
   const entry = {
     timestamp: new Date().toISOString(),
@@ -106,20 +234,7 @@ function getUserDetails(email) {
 function getUserMailboxSettings(email) {
   try {
     if (!email) throw new Error('User email is required.');
-
-    if (typeof Gmail === 'undefined' || !Gmail.Users?.Settings?.getVacation) {
-      throw new Error('Gmail advanced service is not enabled.');
-    }
-
-    const vacation = Gmail.Users.Settings.getVacation(email);
-
-    return {
-      enableAutoReply: Boolean(vacation.enableAutoReply),
-      responseSubject: vacation.responseSubject || '',
-      responseBodyPlainText: vacation.responseBodyPlainText || '',
-      restrictToContacts: Boolean(vacation.restrictToContacts),
-      restrictToDomain: Boolean(vacation.restrictToDomain)
-    };
+    return getDelegatedMailboxSettings(email);
   } catch (error) {
     console.error('Error fetching mailbox settings:', error);
     throw new Error(`Failed to fetch mailbox settings: ${error.message}`);
@@ -267,6 +382,15 @@ function hideUserFromGlobalAddressList(email, actionLog) {
     logAction(actionLog, 'Directory', 'Hide User from Global Address List', 'Success', email);
   } catch (error) {
     logAction(actionLog, 'Directory', 'Hide User from Global Address List', 'Failed', error.message);
+  }
+}
+
+function moveUserToOffboardedOu(email, actionLog) {
+  try {
+    AdminDirectory.Users.update({ orgUnitPath: '/Offboarded users' }, email);
+    logAction(actionLog, 'Directory', 'Move User to Offboarded Users OU', 'Success', '/Offboarded users');
+  } catch (error) {
+    logAction(actionLog, 'Directory', 'Move User to Offboarded Users OU', 'Failed', error.message);
   }
 }
 
@@ -419,17 +543,22 @@ function transferDriveOwnershipToManager(userEmail, managerEmail, managerDisplay
 
 function runGmailOperations(userEmail, actionLog, options) {
   const config = options || {};
+  if (!config.enableAutoReply) {
+    logAction(actionLog, 'Gmail', 'Enable Vacation Auto-Reply', 'Skipped', 'Auto-reply is disabled for this run.');
+    return;
+  }
+
   const subject = config.autoReplySubject || 'Out of office';
   const message = config.autoReplyMessage || 'This mailbox is no longer monitored. Please contact your manager or IT support for assistance.';
 
   try {
-    Gmail.Users.Settings.updateVacation({
+    updateDelegatedMailboxSettings(userEmail, {
       enableAutoReply: true,
       responseSubject: subject,
       responseBodyPlainText: message,
       restrictToContacts: false,
       restrictToDomain: true
-    }, userEmail);
+    });
 
     logAction(actionLog, 'Gmail', 'Enable Vacation Auto-Reply', 'Success', `${userEmail} | Subject: ${subject}`);
   } catch (error) {
@@ -437,7 +566,12 @@ function runGmailOperations(userEmail, actionLog, options) {
   }
 }
 
-function runCalendarOperations(userEmail, managerEmail, actionLog) {
+function runCalendarOperations(userEmail, managerEmail, actionLog, enabled) {
+  if (!enabled) {
+    logAction(actionLog, 'Calendar', 'Grant Calendar Access to Manager', 'Skipped', 'Calendar handoff is disabled for this run.');
+    return;
+  }
+
   if (!managerEmail) {
     logAction(actionLog, 'Calendar', 'Grant Calendar Access to Manager', 'Skipped', 'No manager available.');
     return;
@@ -487,6 +621,10 @@ function sendRunSummaryEmailToScriptRunner(result, actionLog) {
 
 function offboardUser(formData) {
   const email = formData.email;
+  const options = formData.options || {};
+  const mailOptions = options.mail || {};
+  const calendarOptions = options.calendar || {};
+  const securityOptions = options.security || {};
   const actionLog = [];
   let context = { userDisplay: email, managerEmail: null, managerDisplay: 'No manager found.' };
   let newPassword = '';
@@ -499,21 +637,62 @@ function offboardUser(formData) {
 
     context = getUserDirectoryContext(email, actionLog);
 
-    suspendUser(email, actionLog);
-    newPassword = resetUserPassword(email, actionLog);
-    removeUserFromGroups(email, actionLog);
-    removeCustomAdminRoles(email, actionLog);
-    hideUserFromGlobalAddressList(email, actionLog);
+    if (securityOptions.moveToOffboardedOu) {
+      moveUserToOffboardedOu(email, actionLog);
+    } else {
+      logAction(actionLog, 'Directory', 'Move User to Offboarded Users OU', 'Skipped', 'Disabled for this run.');
+    }
+
+    if (securityOptions.suspend) {
+      suspendUser(email, actionLog);
+    } else {
+      logAction(actionLog, 'Security', 'Suspend User', 'Skipped', 'Disabled for this run.');
+    }
+
+    if (securityOptions.resetPassword) {
+      newPassword = resetUserPassword(email, actionLog);
+    } else {
+      logAction(actionLog, 'Security', 'Reset Password', 'Skipped', 'Disabled for this run.');
+    }
+
+    if (securityOptions.removeGroups) {
+      removeUserFromGroups(email, actionLog);
+    } else {
+      logAction(actionLog, 'Directory', 'Remove Group Memberships', 'Skipped', 'Disabled for this run.');
+    }
+
+    if (securityOptions.removeAdminRoles) {
+      removeCustomAdminRoles(email, actionLog);
+    } else {
+      logAction(actionLog, 'Directory', 'Remove Custom Admin Roles', 'Skipped', 'Disabled for this run.');
+    }
+
+    if (calendarOptions.hideFromGlobalAddressList) {
+      hideUserFromGlobalAddressList(email, actionLog);
+    } else {
+      logAction(actionLog, 'Directory', 'Hide User from Global Address List', 'Skipped', 'Disabled for this run.');
+    }
+
     transferDriveOwnershipToManager(email, context.managerEmail, context.managerDisplay, actionLog);
 
     runGmailOperations(email, actionLog, {
-      autoReplySubject: formData.autoReplySubject,
-      autoReplyMessage: formData.autoReplyMessage
+      enableAutoReply: mailOptions.enableAutoReply,
+      autoReplySubject: mailOptions.autoReplySubject,
+      autoReplyMessage: mailOptions.autoReplyMessage
     });
-    runCalendarOperations(email, context.managerEmail, actionLog);
+    runCalendarOperations(email, context.managerEmail, actionLog, calendarOptions.grantManagerAccess);
     removeAppSpecificPasswords(email, actionLog);
-    revokeOauthTokens(email, actionLog);
-    signUserOutOfAllSessions(email, actionLog);
+    if (securityOptions.revokeTokens) {
+      revokeOauthTokens(email, actionLog);
+    } else {
+      logAction(actionLog, 'Security', 'Revoke OAuth Tokens', 'Skipped', 'Disabled for this run.');
+    }
+
+    if (securityOptions.signOut) {
+      signUserOutOfAllSessions(email, actionLog);
+    } else {
+      logAction(actionLog, 'Security', 'Sign Out of All Sessions', 'Skipped', 'Disabled for this run.');
+    }
 
     logAction(actionLog, 'System', 'Finish Offboarding Run', 'Success', email);
 

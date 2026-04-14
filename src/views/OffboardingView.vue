@@ -112,8 +112,12 @@ const form = reactive<OffboardingForm>({
     autoReplySubject: 'Out of office',
     autoReplyMessage: 'This mailbox is no longer monitored. Please contact your manager or IT support.'
   },
-  calendar: { grantManagerAccess: true },
+  calendar: {
+    grantManagerAccess: true,
+    hideFromGlobalAddressList: true
+  },
   security: {
+    moveToOffboardedOu: true,
     suspend: true,
     resetPassword: true,
     removeGroups: true,

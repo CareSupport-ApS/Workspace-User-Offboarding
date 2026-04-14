@@ -121,6 +121,11 @@ const props = defineProps<{
 
 const securityActions = computed(() => [
   {
+    key: 'moveToOffboardedOu' as const,
+    label: 'Move to Offboarded Users OU',
+    description: 'Moves the account into the `/Offboarded users` organizational unit for cleaner policy targeting and isolation.'
+  },
+  {
     key: 'suspend' as const,
     label: 'Suspend user',
     description: 'Blocks sign-in across Google Workspace so the account can no longer be used.'

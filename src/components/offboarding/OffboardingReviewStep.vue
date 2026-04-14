@@ -16,9 +16,11 @@ interface MailOptions {
 
 interface CalendarOptions {
   grantManagerAccess: boolean;
+  hideFromGlobalAddressList: boolean;
 }
 
 interface SecurityOptions {
+  moveToOffboardedOu: boolean;
   suspend: boolean;
   resetPassword: boolean;
   removeGroups: boolean;
